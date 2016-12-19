@@ -2,22 +2,34 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public interface IServiceProvider {
+public abstract class IServiceProvider
+{
 
-	string GetName();
+	protected bool _enabled=true;
+
+	public delegate void OnValueChangedDeleg(IServiceProvider s);
+	public OnValueChangedDeleg OnValueChanged;
+
+
+	public virtual void SetEnabled(bool e)
+	{
+		_enabled = e;
+	}
+	public virtual bool IsEnabled()
+	{
+		return _enabled;
+	}
+
+	public abstract string GetName();
 
 	//Is TCP required for reliable data send
-	bool IsReliable();
+	public abstract bool IsReliable();
 
+	public abstract byte[] GetData();
 
-	void SetEnabled(bool e);
-	bool IsEnabled();
+	public abstract void Update();
 
+	public abstract void ProcessData(byte[] data);
 
-	byte[] GetData();
-
-	void Update();
-
-	void ProcessData(byte[] data);
-
+	public abstract string GetDebugString();
 }
