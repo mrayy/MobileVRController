@@ -6,6 +6,7 @@ using System;
 public class TouchServiceProvider : IServiceProvider {
 
 
+	public const string ServiceName="Touch";
 
 	List<Vector3> _touchPos=new List<Vector3>();
 	List<byte> _data=new List<byte>();
@@ -24,7 +25,7 @@ public class TouchServiceProvider : IServiceProvider {
 
 	public override string GetName()
 	{
-		return "Touch";
+		return ServiceName;
 	}
 	public override bool IsReliable(){
 		return true;
@@ -44,8 +45,10 @@ public class TouchServiceProvider : IServiceProvider {
 		_data.Clear ();
 		_touchPos.Clear ();
 		_data.AddRange(BitConverter.GetBytes ((int)Input.touches.Length));
+		Vector2 screenInv = new Vector2 (1.0f / Screen.width, 1.0f / Screen.height);
+
 		foreach (var t in Input.touches) {
-			Vector3 p = new Vector3 (t.position.x, t.position.y, t.pressure);
+			Vector3 p = new Vector3 (t.position.x*screenInv.x, t.position.y*screenInv.y, t.pressure/t.maximumPossiblePressure);
 			_touchPos.Add (p);
 			_data.AddRange (BitConverter.GetBytes (p.x));
 			_data.AddRange (BitConverter.GetBytes (p.y));

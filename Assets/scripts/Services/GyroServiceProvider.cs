@@ -6,7 +6,7 @@ using System.IO;
 
 public class GyroServiceProvider : IServiceProvider {
 
-
+	public const string ServiceName="Gyro";
 	Quaternion _GyroData = new Quaternion ();
 	Quaternion _CalibGyro = new Quaternion ();
 	List<byte> _data=new List<byte>();
@@ -30,7 +30,7 @@ public class GyroServiceProvider : IServiceProvider {
 
 	public override string GetName()
 	{
-		return "Gyro";
+		return ServiceName;
 	}
 
 	public override bool IsReliable(){

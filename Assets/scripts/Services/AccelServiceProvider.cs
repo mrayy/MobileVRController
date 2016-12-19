@@ -6,6 +6,7 @@ using System;
 public class AccelServiceProvider : IServiceProvider {
 
 
+	public const string ServiceName="Accel";
 	Vector3 _AccelData = new Vector3 ();
 	List<byte> _data=new List<byte>();
 
@@ -22,7 +23,7 @@ public class AccelServiceProvider : IServiceProvider {
 
 	public override string GetName()
 	{
-		return "Accel";
+		return ServiceName;
 	}
 
 

@@ -5,6 +5,7 @@ using System;
 
 public class SwipeServiceProvider : IServiceProvider {
 
+	public const string ServiceName="Swipe";
 
 	public enum ESwipeType
 	{
@@ -34,7 +35,7 @@ public class SwipeServiceProvider : IServiceProvider {
 
 	public override string GetName()
 	{
-		return "Swipe";
+		return ServiceName;
 	}
 	public override bool IsReliable(){
 		return true;
