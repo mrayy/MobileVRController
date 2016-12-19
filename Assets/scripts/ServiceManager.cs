@@ -19,15 +19,20 @@ public class ServiceManager : MonoBehaviour {
 
 	TcpListener _tcpServer;
 
-	Thread _serverThrad;
+	Thread _serverThread;
+
+	Thread _tcpThread;
+	Thread _udpThread;
 
 	public bool IsReceiver=false;
 
-	public int LocalTCPPort= 7000;
-	public int LocalUDPPort= 7001;
+	public int ReceiverTCPPort= 7000;
+	public int ReceiverUDPPort= 7001;
 
-	public int RemoteTCPPort= 7005;
-	public int RemoteUDPPort = 7070;
+	public int MobileTCPPort= 7005;
+	public int MobileUDPPort = 7070;
+
+	public string MobileIP="";
 
 	bool _isDone=false;
 
@@ -43,36 +48,57 @@ public class ServiceManager : MonoBehaviour {
 	public enum EMessageType
 	{
 		ControlMessage,
-		ServiceMessage,
-		DataMessage
+		ServiceMessage
 	}
 
-	public enum EControlMessage
+
+	public enum EServiceMessage
 	{
 		EnableService,
-		DisableService
+		DisableService,
+		ServiceData
 	}
 
 	// Use this for initialization
 	void Start () {
-		_udpClient = new UdpClient ();
-		_tcpClient = new TcpClient ();
 
-		_tcpServer = new TcpListener (LocalTCPPort);
+		if (IsReceiver) {
+			//Client
+			_udpClient = new UdpClient (ReceiverUDPPort);
+			_tcpClient = new TcpClient ();
+			IPAddress addr = IPAddress.Parse (MobileIP);
+			_tcpClient.Connect (addr, MobileTCPPort);
 
+			_tcpServer = new TcpListener (ReceiverTCPPort);
+			_tcpServer.Start ();
 
-		_serverThrad = new Thread(new ThreadStart(TcpServerThreadHandler));
-		_serverThrad.Start();
+			_tcpThread=new Thread (new ThreadStart (TcpClientThreadHandler));
+			_udpThread=new Thread (new ThreadStart (UdpClientThreadHandler));
 
+			_tcpThread.Start ();
+			_udpThread.Start ();
+
+		} else {
+			//Server (Mobile Side)
+			_tcpServer = new TcpListener ( MobileTCPPort);
+			_serverThread = new Thread (new ThreadStart (TcpServerThreadHandler));
+
+			_udpClient = new UdpClient ();
+			_tcpClient = new TcpClient ();
+
+			_ReliableDataWriter = new BinaryWriter (_ReliableDataMem);
+			_UnReliableDataWriter = new BinaryWriter (_UnReliableDataMem);
+
+			_tcpServer.Start ();
+			_serverThread.Start ();
+
+		}
 
 		_Services.Add(new GyroServiceProvider ());
 		_Services.Add(new AccelServiceProvider ());
 		_Services.Add(new SwipeServiceProvider ());
 		_Services.Add(new TouchServiceProvider ());
 
-
-		_ReliableDataWriter = new BinaryWriter (_ReliableDataMem);
-		_UnReliableDataWriter = new BinaryWriter (_UnReliableDataMem);
 
 	}
 
@@ -84,38 +110,128 @@ public class ServiceManager : MonoBehaviour {
 			_currentClient.Close ();
 		_tcpClient.Close ();
 		_udpClient.Close ();
-		_serverThrad.Join ();
+		_tcpServer.Stop ();
+
+		if (IsReceiver) {
+			_tcpThread.Abort ();
+			_udpThread.Abort ();
+			_tcpThread.Join ();
+			_udpThread.Join ();
+			
+		} else {
+			_serverThread.Abort ();
+			_serverThread.Join ();
+		}
 	}
 
 	void _NewClientConnected()
 	{
+		Debug.Log ("Client connected!");
 		_tcpClient.Close ();
 		_udpClient.Close ();
 
+		_tcpClient = new TcpClient ();
+		_udpClient = new UdpClient ();
+
 		IPEndPoint addr=((IPEndPoint)_currentClient.Client.RemoteEndPoint);
-		_tcpClient.Connect (addr.Address, RemoteTCPPort);
-		_udpClient.Connect(addr.Address, RemoteUDPPort);
+		_tcpClient.Connect (addr.Address, ReceiverTCPPort);
+		_udpClient.Connect(addr.Address, ReceiverUDPPort);
 
 
 	}
 
-	void _ProcessControlMessage(BinaryReader rdr)
+	IServiceProvider GetService(string name)
 	{
+		foreach(var s in _Services)
+		{
+			if(s.GetName().ToLower()==name)
+				return s;
+		}
+		return null;
 	}
 
-	void _ProcessServiceMessage(BinaryReader rdr)
+	bool _ProcessControlMessage(BinaryReader rdr)
+	{
+		return false;
+	}
+
+	bool _ProcessServiceMessage(BinaryReader rdr)
 	{
 		string serviceName=rdr.ReadString ().ToLower();
+		EServiceMessage msg=(EServiceMessage) rdr.ReadInt32 ();
+		IServiceProvider s = GetService (serviceName);
+		if (s == null)
+			return false;
+		switch (msg) {
+		case EServiceMessage.ServiceData:
+			{
+				int len = rdr.ReadInt32 ();
+				byte[] data = rdr.ReadBytes (len);
+				s.ProcessData (data);
+			}
+			break;
+		case EServiceMessage.EnableService:
+			s.SetEnabled (true);
+			break;
+		case EServiceMessage.DisableService:
+			s.SetEnabled (false);
+			break;
+		}
+		return true;
+	}
 
+
+
+	void _ProcessReceivedData(EndPoint src, byte[] data,int len)
+	{
+
+		BinaryReader rdr;
+		MemoryStream ms;
+
+		ms = new MemoryStream (data, 0, len, false);
+		rdr=new BinaryReader(ms);
+		//parse message name
+		EMessageType msg=(EMessageType) rdr.ReadInt32();
+		switch (msg) {
+		case EMessageType.ControlMessage:
+			_ProcessControlMessage (rdr);
+			break;
+		case EMessageType.ServiceMessage:
+			while (ms.Position < ms.Length)
+				if (!_ProcessServiceMessage (rdr))
+					break;
+			break;
+		}
+	}
+
+	public void TcpClientThreadHandler()
+	{
+		Byte[] bytes = new Byte[256];
+		while (!_isDone) {
+			TcpClient client=_tcpServer.AcceptTcpClient ();
+			while (client!=null && client.Connected) {
+				int len = client.GetStream ().Read (bytes, 0, bytes.Length);
+				if (len > 0) {
+					_ProcessReceivedData (client.Client.RemoteEndPoint, bytes, len);
+				}
+			}
+		}
+	}
+
+	public void UdpClientThreadHandler()
+	{
+		IPEndPoint ip=new IPEndPoint(IPAddress.Any, 0);;
+		while (!_isDone) {
+			byte[] data= _udpClient.Receive (ref ip);
+			if (data != null && data.Length > 0) {
+				_ProcessReceivedData (ip, data,data.Length);
+			}
+		}
 	}
 
 	public void TcpServerThreadHandler()
 	{
 		Byte[] bytes = new Byte[256];
-		String data = null;
-		BinaryReader rdr;
-		MemoryStream ms;
-
 		while(!_isDone)
 		{
 			TcpClient client= _tcpServer.AcceptTcpClient ();
@@ -140,34 +256,36 @@ public class ServiceManager : MonoBehaviour {
 				int len=stream.Read (bytes, 0, bytes.Length);
 				if (len == 0)
 					continue;
-				ms = new MemoryStream (bytes, 0, len, false);
-				rdr=new BinaryReader(ms);
-				//parse message name
-				EMessageType msg=(EMessageType) rdr.ReadInt32();
-				switch (msg) {
-				case EMessageType.ControlMessage:
-					_ProcessControlMessage (rdr);
-					break;
-				case EMessageType.ServiceMessage:
-					_ProcessServiceMessage (rdr);
-					break;
-				}
+				_ProcessReceivedData (_currentClient.Client.RemoteEndPoint, bytes,len);
+
 			}
 		}
 	}
 
+
+	void _WriteData(BinaryWriter w, string service,byte[] data)
+	{
+		w.Write (service.ToLower());
+		w.Write ((int)EServiceMessage.ServiceData);
+		w.Write (data.Length);
+		w.Write (data);
+	}
 	void _AddReliableData(string service,byte[] data)
 	{
 		_ReliableDataDirty = true;
+		_WriteData (_ReliableDataWriter, service, data);
 	}
 
 	void _AddUnReliableData(string service,byte[] data)
 	{
 		_UnReliableDataDirty = true;
+		_WriteData (_UnReliableDataWriter, service, data);
 	}
-	// Update is called once per frame
-	void Update () {
 
+	void _ProcessSendData()
+	{
+		if (_tcpClient == null)
+			return;
 		_ReliableDataDirty = false;
 		_UnReliableDataDirty = false;
 
@@ -176,8 +294,8 @@ public class ServiceManager : MonoBehaviour {
 		_UnReliableDataMem.Seek (0,SeekOrigin.Begin);
 		_UnReliableDataMem.SetLength (0);
 
-		_ReliableDataWriter.Write ((int)EMessageType.DataMessage);
-		_UnReliableDataWriter.Write ((int)EMessageType.DataMessage);
+		_ReliableDataWriter.Write ((int)EMessageType.ServiceMessage);
+		_UnReliableDataWriter.Write ((int)EMessageType.ServiceMessage);
 		foreach (var s in _Services) {
 			if (!s.IsEnabled ())
 				continue;
@@ -193,16 +311,22 @@ public class ServiceManager : MonoBehaviour {
 			_tcpClient.GetStream ().Write (_ReliableDataMem.GetBuffer (), 0, (int) _ReliableDataMem.Length);
 		if (_UnReliableDataDirty && _udpClient.Client.Connected)
 			_udpClient.Send (_UnReliableDataMem.GetBuffer (), (int)_UnReliableDataMem.Length);
+	}
+	// Update is called once per frame
+	void Update () {
+
+		if(!IsReceiver)
+			_ProcessSendData ();
 
 	}
 
 
 	void OnGUI()
 	{
-		string text = "";
+		string text = "IP Address:"+Network.player.ipAddress + "\n";
 		foreach (var s in _Services) {
 			text += s.GetName () + ": ";
-			text+=s.GetDebugString ();
+			text += s.GetDebugString ();
 			text += "\n";
 		}
 
