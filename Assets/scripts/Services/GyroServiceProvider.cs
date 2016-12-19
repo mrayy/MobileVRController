@@ -20,7 +20,7 @@ public class GyroServiceProvider : IServiceProvider {
 
 	public GyroServiceProvider()
 	{
-		Calibrate ();
+		//Calibrate ();
 	}
 
 	void Calibrate()
@@ -46,7 +46,7 @@ public class GyroServiceProvider : IServiceProvider {
 	{
 		if (!_enabled)
 			return;
-		_GyroData= _CalibGyro*Input.gyro.attitude;
+		_GyroData= Input.gyro.attitude;
 
 		_data.Clear ();
 

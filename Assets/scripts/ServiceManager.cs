@@ -45,6 +45,10 @@ public class ServiceManager : MonoBehaviour {
 	BinaryWriter _ReliableDataWriter ;
 	BinaryWriter _UnReliableDataWriter ;
 
+	public delegate void OnValueChangedDeleg(ServiceManager m,IServiceProvider s);
+	public OnValueChangedDeleg OnValueChanged;
+
+
 	public enum EMessageType
 	{
 		ControlMessage,
@@ -58,6 +62,11 @@ public class ServiceManager : MonoBehaviour {
 		DisableService,
 		ServiceData
 	}
+	void _OnServiceValueChanged(IServiceProvider service)
+	{
+		if (OnValueChanged != null)
+			OnValueChanged (this,service);
+	}
 
 	// Use this for initialization
 	void Start () {
@@ -69,7 +78,7 @@ public class ServiceManager : MonoBehaviour {
 			IPAddress addr = IPAddress.Parse (MobileIP);
 			_tcpClient.Connect (addr, MobileTCPPort);
 
-			_tcpServer = new TcpListener (ReceiverTCPPort);
+			_tcpServer = new TcpListener (IPAddress.Any, ReceiverTCPPort);
 			_tcpServer.Start ();
 
 			_tcpThread=new Thread (new ThreadStart (TcpClientThreadHandler));
@@ -80,7 +89,7 @@ public class ServiceManager : MonoBehaviour {
 
 		} else {
 			//Server (Mobile Side)
-			_tcpServer = new TcpListener ( MobileTCPPort);
+			_tcpServer = new TcpListener (IPAddress.Any, MobileTCPPort);
 			_serverThread = new Thread (new ThreadStart (TcpServerThreadHandler));
 
 			_udpClient = new UdpClient ();
@@ -100,6 +109,9 @@ public class ServiceManager : MonoBehaviour {
 		_Services.Add(new TouchServiceProvider ());
 
 
+		for (int i = 0; i < _Services.Count; ++i)
+			_Services [i].OnValueChanged += _OnServiceValueChanged;
+
 	}
 
 	void OnDestroy()
@@ -113,8 +125,8 @@ public class ServiceManager : MonoBehaviour {
 		_tcpServer.Stop ();
 
 		if (IsReceiver) {
-			_tcpThread.Abort ();
-			_udpThread.Abort ();
+		//	_tcpThread.Abort ();
+		//	_udpThread.Abort ();
 			_tcpThread.Join ();
 			_udpThread.Join ();
 			
@@ -208,11 +220,20 @@ public class ServiceManager : MonoBehaviour {
 	{
 		Byte[] bytes = new Byte[256];
 		while (!_isDone) {
-			TcpClient client=_tcpServer.AcceptTcpClient ();
-			while (client!=null && client.Connected) {
-				int len = client.GetStream ().Read (bytes, 0, bytes.Length);
-				if (len > 0) {
-					_ProcessReceivedData (client.Client.RemoteEndPoint, bytes, len);
+			_currentClient=_tcpServer.AcceptTcpClient ();
+			while (_currentClient!=null && _currentClient.Connected) {
+				try
+				{
+					int len = _currentClient.GetStream ().Read (bytes, 0, bytes.Length);
+					if (len > 0) {
+						_ProcessReceivedData (_currentClient.Client.RemoteEndPoint, bytes, len);
+					}
+				}catch(SocketException e) {
+//					Debug.Log (e.Message);
+					break;
+				}catch(Exception e) {
+					//					Debug.Log (e.Message);
+					break;
 				}
 			}
 		}
@@ -222,9 +243,14 @@ public class ServiceManager : MonoBehaviour {
 	{
 		IPEndPoint ip=new IPEndPoint(IPAddress.Any, 0);;
 		while (!_isDone) {
-			byte[] data= _udpClient.Receive (ref ip);
-			if (data != null && data.Length > 0) {
-				_ProcessReceivedData (ip, data,data.Length);
+			try{
+				byte[] data= _udpClient.Receive (ref ip);
+				if (data != null && data.Length > 0) {
+					_ProcessReceivedData (ip, data,data.Length);
+				}
+			}catch(Exception e) {
+			//	Debug.Log (e.Message);
+				Thread.Sleep (100);
 			}
 		}
 	}
@@ -234,31 +260,50 @@ public class ServiceManager : MonoBehaviour {
 		Byte[] bytes = new Byte[256];
 		while(!_isDone)
 		{
-			TcpClient client= _tcpServer.AcceptTcpClient ();
-			if (client != null) {
-				//new client, make sure only one client is connected at a time
-				if (_currentClient != null && _currentClient.Connected) {
-					//ignore the new client
-					client.Close ();
-					continue;
-				} else {
-					_currentClient = client;
-					_NewClientConnected ();
+			try
+			{
+				TcpClient client= _tcpServer.AcceptTcpClient ();
+				if (client != null) {
+					//new client, make sure only one client is connected at a time
+					if (_currentClient != null && _currentClient.Connected) {
+						//ignore the new client
+						client.Close ();
+						continue;
+					} else {
+						_currentClient = client;
+						_NewClientConnected ();
+					}
 				}
+			}catch(Exception e) {
+				Debug.Log (e.Message);
+				continue;
 			}
 
 			if (_currentClient == null)
 				continue;
 
 			var stream=_currentClient.GetStream();
-			while (_currentClient!=null && _currentClient.Connected) {
+			while (_currentClient!=null && _currentClient.Connected
+				&& _tcpClient.Connected) {
 				//process client
-				int len=stream.Read (bytes, 0, bytes.Length);
-				if (len == 0)
-					continue;
-				_ProcessReceivedData (_currentClient.Client.RemoteEndPoint, bytes,len);
+				try
+				{
+					int len=stream.Read (bytes, 0, bytes.Length);
+					if (len == 0)
+						break;
+					_ProcessReceivedData (_currentClient.Client.RemoteEndPoint, bytes,len);
+				}catch(SocketException e) {
+				//	Debug.Log (e.Message);
+					break;
+				}catch(Exception e) {
+				//	Debug.Log (e.Message);
+					break;
+				}
 
 			}
+			_tcpClient.Close ();
+			_currentClient.Close ();
+			_currentClient = null;
 		}
 	}
 
@@ -284,7 +329,7 @@ public class ServiceManager : MonoBehaviour {
 
 	void _ProcessSendData()
 	{
-		if (_tcpClient == null)
+		if (_tcpClient == null || !_tcpClient.Connected)
 			return;
 		_ReliableDataDirty = false;
 		_UnReliableDataDirty = false;
@@ -307,10 +352,14 @@ public class ServiceManager : MonoBehaviour {
 				_AddUnReliableData (s.GetName (), data);
 		}
 
-		if (_ReliableDataDirty && _tcpClient.Connected)
-			_tcpClient.GetStream ().Write (_ReliableDataMem.GetBuffer (), 0, (int) _ReliableDataMem.Length);
-		if (_UnReliableDataDirty && _udpClient.Client.Connected)
-			_udpClient.Send (_UnReliableDataMem.GetBuffer (), (int)_UnReliableDataMem.Length);
+		try{
+			if (_ReliableDataDirty && _tcpClient.Connected)
+				_tcpClient.GetStream ().Write (_ReliableDataMem.GetBuffer (), 0, (int) _ReliableDataMem.Length);
+			if (_UnReliableDataDirty && _udpClient.Client.Connected)
+				_udpClient.Send (_UnReliableDataMem.GetBuffer (), (int)_UnReliableDataMem.Length);
+		}catch(Exception e) {
+			Debug.Log (e.Message);
+		}
 	}
 	// Update is called once per frame
 	void Update () {
