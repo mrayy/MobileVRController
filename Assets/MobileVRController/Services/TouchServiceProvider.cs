@@ -28,7 +28,7 @@ public class TouchServiceProvider : IServiceProvider {
 		return ServiceName;
 	}
 	public override bool IsReliable(){
-		return true;
+		return false;
 	}
 
 

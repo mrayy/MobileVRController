@@ -378,6 +378,10 @@ public class ServiceManager : MonoBehaviour {
 			text += s.GetDebugString ();
 			text += "\n";
 		}
+		if (!IsReceiver) {
+			text += "UDP Size:"+_UnReliableDataMem.Length.ToString()+"\n";
+			text += "TCP Size:"+_ReliableDataMem.Length.ToString()+"\n";
+		}
 
 		GUI.Label (new Rect (20, 20, 500, 500), text);
 	}

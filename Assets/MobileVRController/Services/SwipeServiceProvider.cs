@@ -79,8 +79,10 @@ public class SwipeServiceProvider : IServiceProvider {
 			return;
 			
 		ESwipeType s= DetectSwipe ();
-		if (s != ESwipeType.None)
-			_swipe = s;
+		if (s == _swipe)
+			return;//no change
+
+		_swipe = s;
 
 		_data.Clear ();
 		_data.AddRange (BitConverter.GetBytes ((int)_swipe));
