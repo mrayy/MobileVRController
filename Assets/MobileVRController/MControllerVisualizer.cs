@@ -79,4 +79,10 @@ public class MControllerVisualizer : MonoBehaviour {
 			_touchObjects [i].SetActive (false);
 		}
 	}
+
+
+	public void CalibrateGyro()
+	{
+		Service.CalibrateGyro ();
+	}
 }

@@ -76,7 +76,7 @@ public class ServiceManager : MonoBehaviour {
 			_udpClient = new UdpClient (ReceiverUDPPort);
 			_tcpClient = new TcpClient ();
 			IPAddress addr = IPAddress.Parse (MobileIP);
-			_tcpClient.Connect (addr, MobileTCPPort);
+			_tcpClient.BeginConnect (addr, MobileTCPPort,null,false);
 
 			_tcpServer = new TcpListener (IPAddress.Any, ReceiverTCPPort);
 			_tcpServer.Start ();
@@ -152,8 +152,9 @@ public class ServiceManager : MonoBehaviour {
 
 	}
 
-	IServiceProvider GetService(string name)
+	public IServiceProvider GetService(string name)
 	{
+		name = name.ToLower ();
 		foreach(var s in _Services)
 		{
 			if(s.GetName().ToLower()==name)
@@ -229,10 +230,10 @@ public class ServiceManager : MonoBehaviour {
 						_ProcessReceivedData (_currentClient.Client.RemoteEndPoint, bytes, len);
 					}
 				}catch(SocketException e) {
-//					Debug.Log (e.Message);
+					Debug.LogError ("TcpClientThreadHandler() - "+e.Message);
 					break;
 				}catch(Exception e) {
-					//					Debug.Log (e.Message);
+					Debug.LogError ("TcpClientThreadHandler() - "+e.Message);
 					break;
 				}
 			}
@@ -249,7 +250,7 @@ public class ServiceManager : MonoBehaviour {
 					_ProcessReceivedData (ip, data,data.Length);
 				}
 			}catch(Exception e) {
-			//	Debug.Log (e.Message);
+				Debug.LogError ("UdpClientThreadHandler() - "+e.Message);
 				Thread.Sleep (100);
 			}
 		}
@@ -275,7 +276,7 @@ public class ServiceManager : MonoBehaviour {
 					}
 				}
 			}catch(Exception e) {
-				Debug.Log (e.Message);
+				Debug.LogError ("TcpServerThreadHandler() - "+e.Message);
 				continue;
 			}
 
@@ -293,10 +294,10 @@ public class ServiceManager : MonoBehaviour {
 						break;
 					_ProcessReceivedData (_currentClient.Client.RemoteEndPoint, bytes,len);
 				}catch(SocketException e) {
-				//	Debug.Log (e.Message);
+					Debug.LogError ("TcpServerThreadHandler() - "+e.Message);
 					break;
 				}catch(Exception e) {
-				//	Debug.Log (e.Message);
+					Debug.LogError ("TcpServerThreadHandler() - "+e.Message);
 					break;
 				}
 
@@ -358,7 +359,7 @@ public class ServiceManager : MonoBehaviour {
 			if (_UnReliableDataDirty && _udpClient.Client.Connected)
 				_udpClient.Send (_UnReliableDataMem.GetBuffer (), (int)_UnReliableDataMem.Length);
 		}catch(Exception e) {
-			Debug.Log (e.Message);
+			Debug.LogError ("_ProcessSendData()"+e.Message);
 		}
 	}
 	// Update is called once per frame
@@ -370,8 +371,13 @@ public class ServiceManager : MonoBehaviour {
 	}
 
 
+	GUIStyle _style=new GUIStyle();
+
 	void OnGUI()
 	{
+		_style.fontSize = 24;
+		_style.normal.textColor=Color.white;
+//		_style.font.material.color = Color.white;
 		string text = "IP Address:"+Network.player.ipAddress + "\n";
 		foreach (var s in _Services) {
 			text += s.GetName () + ": ";
@@ -383,6 +389,14 @@ public class ServiceManager : MonoBehaviour {
 			text += "TCP Size:"+_ReliableDataMem.Length.ToString()+"\n";
 		}
 
-		GUI.Label (new Rect (20, 20, 500, 500), text);
+		GUI.Label (new Rect (20, 20, 500, 500), text,_style);
+	}
+
+
+
+	public void CalibrateGyro()
+	{
+		var s=GetService(GyroServiceProvider.ServiceName) as GyroServiceProvider;
+		s.Calibrate ();
 	}
 }

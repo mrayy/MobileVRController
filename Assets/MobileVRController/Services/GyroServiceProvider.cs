@@ -20,12 +20,13 @@ public class GyroServiceProvider : IServiceProvider {
 
 	public GyroServiceProvider()
 	{
-		//Calibrate ();
+		Input.gyro.enabled = true;
+		Calibrate ();
 	}
 
-	void Calibrate()
+	public void Calibrate()
 	{
-		_CalibGyro = Quaternion.Inverse(Input.gyro.attitude);
+		_CalibGyro = Quaternion.AngleAxis(-Input.gyro.attitude.eulerAngles.z,Vector3.forward);
 	}
 
 	public override string GetName()
@@ -46,7 +47,7 @@ public class GyroServiceProvider : IServiceProvider {
 	{
 		if (!_enabled)
 			return;
-		_GyroData= Input.gyro.attitude;
+		_GyroData= _CalibGyro*Input.gyro.attitude;
 
 		_data.Clear ();
 
