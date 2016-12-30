@@ -13,6 +13,7 @@ public class ServiceManager : MonoBehaviour {
 	List<IServiceProvider> _Services=new List<IServiceProvider>();
 
 	UdpClient _udpClient;
+	UdpClient _udpSender;
 	TcpClient _tcpClient;
 
 	TcpClient _currentClient;
@@ -26,18 +27,18 @@ public class ServiceManager : MonoBehaviour {
 
 	public bool IsReceiver=false;
 
-	public int ReceiverTCPPort= 7000;
-	public int ReceiverUDPPort= 7001;
+	public int TCPPort= 7000;
+	public int UDPPort= 7001;
 
-	public int MobileTCPPort= 7005;
-	public int MobileUDPPort = 7070;
+	//public int MobileTCPPort= 7005;
+	//public int MobileUDPPort = 7070;
 
 	public string MobileIP="";
 
 	bool _isDone=false;
 
-	MemoryStream _ReliableDataMem = new MemoryStream ();
-	MemoryStream _UnReliableDataMem = new MemoryStream ();
+	MemoryStream _ReliableDataMem;
+	MemoryStream _UnReliableDataMem ;
 
 	bool _ReliableDataDirty=false;
 	bool _UnReliableDataDirty=false;
@@ -71,42 +72,37 @@ public class ServiceManager : MonoBehaviour {
 	// Use this for initialization
 	void Start () {
 
+		_ReliableDataMem = new MemoryStream ();
+		_UnReliableDataMem = new MemoryStream ();
+
+		_ReliableDataWriter = new BinaryWriter (_ReliableDataMem);
+		_UnReliableDataWriter = new BinaryWriter (_UnReliableDataMem);
+
+		_tcpClient = new TcpClient ();
 		if (IsReceiver) {
-			//Client
-			_udpClient = new UdpClient (ReceiverUDPPort);
-			_tcpClient = new TcpClient ();
 			IPAddress addr = IPAddress.Parse (MobileIP);
-			_tcpClient.BeginConnect (addr, MobileTCPPort,null,false);
-
-			_tcpServer = new TcpListener (IPAddress.Any, ReceiverTCPPort);
-			_tcpServer.Start ();
-
-			_tcpThread=new Thread (new ThreadStart (TcpClientThreadHandler));
-			_udpThread=new Thread (new ThreadStart (UdpClientThreadHandler));
-
-			_tcpThread.Start ();
-			_udpThread.Start ();
-
+			_tcpClient.BeginConnect (addr, TCPPort, null, false);
 		} else {
-			//Server (Mobile Side)
-			_tcpServer = new TcpListener (IPAddress.Any, MobileTCPPort);
-			_serverThread = new Thread (new ThreadStart (TcpServerThreadHandler));
-
-			_udpClient = new UdpClient ();
-			_tcpClient = new TcpClient ();
-
-			_ReliableDataWriter = new BinaryWriter (_ReliableDataMem);
-			_UnReliableDataWriter = new BinaryWriter (_UnReliableDataMem);
-
-			_tcpServer.Start ();
-			_serverThread.Start ();
 
 		}
+		_tcpServer = new TcpListener (IPAddress.Any, TCPPort);
+		_udpClient = new UdpClient (UDPPort);
+		_udpSender = new UdpClient ();
 
-		_Services.Add(new GyroServiceProvider ());
-		_Services.Add(new AccelServiceProvider ());
-		_Services.Add(new SwipeServiceProvider ());
-		_Services.Add(new TouchServiceProvider ());
+		_tcpServer.Start ();
+		_serverThread = new Thread (new ThreadStart (TcpServerThreadHandler));
+		_serverThread.Start ();
+
+
+		_udpThread=new Thread (new ThreadStart (UdpClientThreadHandler));
+		_udpThread.Start ();
+
+
+		_Services.Add(new GyroServiceProvider (this));
+		_Services.Add(new AccelServiceProvider (this));
+		_Services.Add(new SwipeServiceProvider (this));
+		_Services.Add(new TouchServiceProvider (this));
+		_Services.Add(new FeedbackServiceProvider (this));
 
 
 		for (int i = 0; i < _Services.Count; ++i)
@@ -122,32 +118,27 @@ public class ServiceManager : MonoBehaviour {
 			_currentClient.Close ();
 		_tcpClient.Close ();
 		_udpClient.Close ();
+		_udpSender.Close ();
 		_tcpServer.Stop ();
 
-		if (IsReceiver) {
-		//	_tcpThread.Abort ();
-		//	_udpThread.Abort ();
-			_tcpThread.Join ();
-			_udpThread.Join ();
-			
-		} else {
-			_serverThread.Abort ();
-			_serverThread.Join ();
-		}
+		_serverThread.Abort ();
+		_serverThread.Join ();
+		_udpThread.Join ();
 	}
 
 	void _NewClientConnected()
 	{
 		Debug.Log ("Client connected!");
-		_tcpClient.Close ();
-		_udpClient.Close ();
-
-		_tcpClient = new TcpClient ();
-		_udpClient = new UdpClient ();
-
 		IPEndPoint addr=((IPEndPoint)_currentClient.Client.RemoteEndPoint);
-		_tcpClient.Connect (addr.Address, ReceiverTCPPort);
-		_udpClient.Connect(addr.Address, ReceiverUDPPort);
+		if (!IsReceiver) {
+			_tcpClient.Close ();
+			_tcpClient = new TcpClient ();
+			_tcpClient.Connect (addr.Address, TCPPort);
+		}
+
+		_udpSender.Close ();
+		_udpSender = new UdpClient ();
+		_udpSender.Connect(addr.Address, UDPPort);
 
 
 	}
@@ -217,29 +208,6 @@ public class ServiceManager : MonoBehaviour {
 		}
 	}
 
-	public void TcpClientThreadHandler()
-	{
-		Byte[] bytes = new Byte[256];
-		while (!_isDone) {
-			_currentClient=_tcpServer.AcceptTcpClient ();
-			while (_currentClient!=null && _currentClient.Connected) {
-				try
-				{
-					int len = _currentClient.GetStream ().Read (bytes, 0, bytes.Length);
-					if (len > 0) {
-						_ProcessReceivedData (_currentClient.Client.RemoteEndPoint, bytes, len);
-					}
-				}catch(SocketException e) {
-					Debug.LogError ("TcpClientThreadHandler() - "+e.Message);
-					break;
-				}catch(Exception e) {
-					Debug.LogError ("TcpClientThreadHandler() - "+e.Message);
-					break;
-				}
-			}
-		}
-	}
-
 	public void UdpClientThreadHandler()
 	{
 		IPEndPoint ip=new IPEndPoint(IPAddress.Any, 0);;
@@ -263,7 +231,8 @@ public class ServiceManager : MonoBehaviour {
 		{
 			try
 			{
-				TcpClient client= _tcpServer.AcceptTcpClient ();
+				Debug.Log ("Waiting for connection.");
+  				TcpClient client= _tcpServer.AcceptTcpClient ();
 				if (client != null) {
 					//new client, make sure only one client is connected at a time
 					if (_currentClient != null && _currentClient.Connected) {
@@ -291,8 +260,13 @@ public class ServiceManager : MonoBehaviour {
 				{
 					int len=stream.Read (bytes, 0, bytes.Length);
 					if (len == 0)
-						break;
-					_ProcessReceivedData (_currentClient.Client.RemoteEndPoint, bytes,len);
+						continue;
+					try{
+						_ProcessReceivedData (_currentClient.Client.RemoteEndPoint, bytes, len);
+					}catch(Exception)
+					{
+						continue;
+					}
 				}catch(SocketException e) {
 					Debug.LogError ("TcpServerThreadHandler() - "+e.Message);
 					break;
@@ -302,6 +276,7 @@ public class ServiceManager : MonoBehaviour {
 				}
 
 			}
+			Debug.Log ("Remote Disconnected.");
 			_tcpClient.Close ();
 			_currentClient.Close ();
 			_currentClient = null;
@@ -347,6 +322,8 @@ public class ServiceManager : MonoBehaviour {
 				continue;
 			s.Update ();
 			byte[] data=s.GetData ();
+			if (data.Length == 0)
+				continue;
 			if (s.IsReliable ())
 				_AddReliableData (s.GetName (), data);
 			else 
@@ -356,17 +333,17 @@ public class ServiceManager : MonoBehaviour {
 		try{
 			if (_ReliableDataDirty && _tcpClient.Connected)
 				_tcpClient.GetStream ().Write (_ReliableDataMem.GetBuffer (), 0, (int) _ReliableDataMem.Length);
-			if (_UnReliableDataDirty && _udpClient.Client.Connected)
-				_udpClient.Send (_UnReliableDataMem.GetBuffer (), (int)_UnReliableDataMem.Length);
+			if (_UnReliableDataDirty && _udpSender.Client.Connected)
+				_udpSender.Send (_UnReliableDataMem.GetBuffer (), (int)_UnReliableDataMem.Length);
 		}catch(Exception e) {
-			Debug.LogError ("_ProcessSendData()"+e.Message);
+			Debug.LogError ("_ProcessSendData() - "+e.Message);
 		}
 	}
 	// Update is called once per frame
 	void Update () {
 
-		if(!IsReceiver)
-			_ProcessSendData ();
+		//if(!IsReceiver)
+		_ProcessSendData ();
 
 	}
 
@@ -384,7 +361,8 @@ public class ServiceManager : MonoBehaviour {
 			text += s.GetDebugString ();
 			text += "\n";
 		}
-		if (!IsReceiver) {
+		//if (!IsReceiver)
+		{
 			text += "UDP Size:"+_UnReliableDataMem.Length.ToString()+"\n";
 			text += "TCP Size:"+_ReliableDataMem.Length.ToString()+"\n";
 		}
