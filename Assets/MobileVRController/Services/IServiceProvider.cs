@@ -6,10 +6,15 @@ public abstract class IServiceProvider
 {
 
 	protected bool _enabled=true;
+	protected ServiceManager _mngr;
 
 	public delegate void OnValueChangedDeleg(IServiceProvider s);
 	public OnValueChangedDeleg OnValueChanged;
 
+	public IServiceProvider(ServiceManager m)
+	{
+		_mngr = m;
+	}
 
 	public virtual void SetEnabled(bool e)
 	{

@@ -7,6 +7,7 @@ public class SwipeServiceProvider : IServiceProvider {
 
 	public const string ServiceName="Swipe";
 
+
 	public enum ESwipeType
 	{
 		None,
@@ -19,7 +20,7 @@ public class SwipeServiceProvider : IServiceProvider {
 	ESwipeType _swipe=ESwipeType.None;
 	List<byte> _data=new List<byte>();
 
-	float threshold=50;
+	float threshold=1000;
 
 
 	public ESwipeType Value {
@@ -28,8 +29,9 @@ public class SwipeServiceProvider : IServiceProvider {
 		}
 	}
 
-	public SwipeServiceProvider()
+	public SwipeServiceProvider (ServiceManager m):base(m)
 	{
+		
 	}
 
 
@@ -57,38 +59,38 @@ public class SwipeServiceProvider : IServiceProvider {
 			return ESwipeType.None;
 
 		Vector2 dir=Input.touches [0].deltaPosition / Input.touches [0].deltaTime;
+		float len = dir.magnitude;
+		if (len < threshold)
+			return ESwipeType.None;
+		dir /= len;
 
-		if(dir.x>threshold)
+		float angle = Mathf.Atan2 (dir.y, dir.x)*Mathf.Rad2Deg;
+		bool neg = angle < 0;
+		angle = Mathf.Abs (angle);
+		if(angle<45)
 			return ESwipeType.Right;
-
-		if(dir.x<-threshold)
-			return ESwipeType.Left;
-
-		if(dir.y>threshold)
-			return ESwipeType.Top;
-
-		if(dir.y<-threshold)
-			return ESwipeType.Bottom;
-
-		return ESwipeType.None;
+		if(angle<135)
+			return neg ? ESwipeType.Bottom:ESwipeType.Top;
+		
+		return ESwipeType.Left;
 	}
 
 	public override void Update()
 	{
-		if (!_enabled)
+		if (!_enabled || _mngr.IsReceiver)
 			return;
-			
+
+		_data.Clear ();
 		ESwipeType s= DetectSwipe ();
 		if (s == _swipe)
 			return;//no change
 
 		_swipe = s;
 
-		_data.Clear ();
 		_data.AddRange (BitConverter.GetBytes ((int)_swipe));
 
-		if (OnValueChanged != null)
-			OnValueChanged (this);
+		//if (OnValueChanged != null)
+		//	OnValueChanged (this);
 	}
 
 

@@ -18,7 +18,7 @@ public class TouchServiceProvider : IServiceProvider {
 		}
 	}
 
-	public TouchServiceProvider()
+	public TouchServiceProvider (ServiceManager m):base(m)
 	{
 	}
 
@@ -39,7 +39,7 @@ public class TouchServiceProvider : IServiceProvider {
 
 	public override void Update()
 	{
-		if (!_enabled)
+		if (!_enabled || _mngr.IsReceiver)
 			return;
 
 		_data.Clear ();
@@ -54,8 +54,8 @@ public class TouchServiceProvider : IServiceProvider {
 			_data.AddRange (BitConverter.GetBytes (p.y));
 			_data.AddRange (BitConverter.GetBytes (p.z));
 		}
-		if (OnValueChanged != null)
-			OnValueChanged (this);
+		//if (OnValueChanged != null)
+		//	OnValueChanged (this);
 	}
 
 

@@ -18,7 +18,7 @@ public class GyroServiceProvider : IServiceProvider {
 		}
 	}
 
-	public GyroServiceProvider()
+	public GyroServiceProvider (ServiceManager m):base(m)
 	{
 		Input.gyro.enabled = true;
 		Calibrate ();
@@ -45,7 +45,7 @@ public class GyroServiceProvider : IServiceProvider {
 
 	public override void Update()
 	{
-		if (!_enabled)
+		if (!_enabled || _mngr.IsReceiver)
 			return;
 		_GyroData= _CalibGyro*Input.gyro.attitude;
 
@@ -56,8 +56,8 @@ public class GyroServiceProvider : IServiceProvider {
 		_data.AddRange (BitConverter.GetBytes (_GyroData.z));
 		_data.AddRange (BitConverter.GetBytes (_GyroData.w));
 
-		if (OnValueChanged != null)
-			OnValueChanged (this);
+		//if (OnValueChanged != null)
+		//	OnValueChanged (this);
 	}
 
 

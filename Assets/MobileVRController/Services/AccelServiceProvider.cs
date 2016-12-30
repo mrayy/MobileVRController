@@ -16,7 +16,7 @@ public class AccelServiceProvider : IServiceProvider {
 			return _AccelData;
 		}
 	}
-	public AccelServiceProvider()
+	public AccelServiceProvider (ServiceManager m):base(m)
 	{
 	}
 
@@ -38,7 +38,7 @@ public class AccelServiceProvider : IServiceProvider {
 
 	public override void Update()
 	{
-		if (!_enabled)
+		if (!_enabled || _mngr.IsReceiver)
 			return;
 		_AccelData= Input.acceleration;
 
@@ -47,8 +47,8 @@ public class AccelServiceProvider : IServiceProvider {
 		_data.AddRange (BitConverter.GetBytes (_AccelData.y));
 		_data.AddRange (BitConverter.GetBytes (_AccelData.z));
 
-		if (OnValueChanged != null)
-			OnValueChanged (this);
+		//if (OnValueChanged != null)
+		//	OnValueChanged (this);
 	}
 
 
