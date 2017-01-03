@@ -26,6 +26,7 @@ Current Service Providers:
 - AccelServiceProvider: provides realtime acceleration information
 - TouchServiceProvider: provides touch points with the pressure information from the touch screen
 - SwipeServiceProvider: provides swiping direction
+- (new)FeedbackServiceProvider: provides feedback (vibration) to mobile side
 
 Expanding Support:
 ------------------
