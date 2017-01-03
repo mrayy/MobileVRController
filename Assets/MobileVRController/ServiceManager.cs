@@ -27,13 +27,15 @@ public class ServiceManager : MonoBehaviour {
 
 	public bool IsReceiver=false;
 
+	public bool DebugPrint=false;
+
 	public int TCPPort= 7000;
 	public int UDPPort= 7001;
 
 	//public int MobileTCPPort= 7005;
 	//public int MobileUDPPort = 7070;
 
-	public string MobileIP="";
+	//public string MobileIP="";
 
 	bool _isDone=false;
 
@@ -78,13 +80,11 @@ public class ServiceManager : MonoBehaviour {
 		_ReliableDataWriter = new BinaryWriter (_ReliableDataMem);
 		_UnReliableDataWriter = new BinaryWriter (_UnReliableDataMem);
 
-		_tcpClient = new TcpClient ();
 		if (IsReceiver) {
-			IPAddress addr = IPAddress.Parse (MobileIP);
-			_tcpClient.BeginConnect (addr, TCPPort, null, false);
 		} else {
 
 		}
+		_tcpClient = new TcpClient ();
 		_tcpServer = new TcpListener (IPAddress.Any, TCPPort);
 		_udpClient = new UdpClient (UDPPort);
 		_udpSender = new UdpClient ();
@@ -116,27 +116,38 @@ public class ServiceManager : MonoBehaviour {
 
 		if (_currentClient != null)
 			_currentClient.Close ();
-		_tcpClient.Close ();
+		if(_tcpClient!=null)
+			_tcpClient.Close ();
 		_udpClient.Close ();
 		_udpSender.Close ();
 		_tcpServer.Stop ();
 
-		_serverThread.Abort ();
+		//_serverThread.Abort ();
 		_serverThread.Join ();
 		_udpThread.Join ();
 	}
 
+	void _CloseConnection()
+	{
+		//if (IsReceiver) 
+		if(_tcpClient!=null)
+			_tcpClient.Close ();
+		if(_udpSender!=null)
+			_udpSender.Close ();
+
+		_tcpClient = null;
+		_udpSender = null;
+
+	}
+
 	void _NewClientConnected()
 	{
-		Debug.Log ("Client connected!");
+		Debug.Log ("_NewClientConnected() - Client connected!");
 		IPEndPoint addr=((IPEndPoint)_currentClient.Client.RemoteEndPoint);
-		if (!IsReceiver) {
-			_tcpClient.Close ();
-			_tcpClient = new TcpClient ();
-			_tcpClient.Connect (addr.Address, TCPPort);
-		}
-
-		_udpSender.Close ();
+		_CloseConnection ();
+		_tcpClient = new TcpClient ();
+		//connect back to the other end 
+		_tcpClient.Connect (addr.Address, TCPPort);
 		_udpSender = new UdpClient ();
 		_udpSender.Connect(addr.Address, UDPPort);
 
@@ -231,15 +242,17 @@ public class ServiceManager : MonoBehaviour {
 		{
 			try
 			{
-				Debug.Log ("Waiting for connection.");
+				Debug.Log ("TcpServerThreadHandler() - Waiting for connection.");
   				TcpClient client= _tcpServer.AcceptTcpClient ();
 				if (client != null) {
-					//new client, make sure only one client is connected at a time
+					/*//new client, make sure only one client is connected at a time
 					if (_currentClient != null && _currentClient.Connected) {
 						//ignore the new client
 						client.Close ();
+						Debug.Log ("TcpServerThreadHandler() - Ignoring connection.");
 						continue;
-					} else {
+					} else */
+					{
 						_currentClient = client;
 						_NewClientConnected ();
 					}
@@ -253,14 +266,15 @@ public class ServiceManager : MonoBehaviour {
 				continue;
 
 			var stream=_currentClient.GetStream();
-			while (_currentClient!=null && _currentClient.Connected
+			while (_currentClient!=null && _tcpClient!=null && _currentClient.Connected
 				&& _tcpClient.Connected) {
 				//process client
 				try
 				{
 					int len=stream.Read (bytes, 0, bytes.Length);
+
 					if (len == 0)
-						continue;
+						continue;//investigate more why the socket return 0, although the socket is still open
 					try{
 						_ProcessReceivedData (_currentClient.Client.RemoteEndPoint, bytes, len);
 					}catch(Exception)
@@ -276,8 +290,9 @@ public class ServiceManager : MonoBehaviour {
 				}
 
 			}
-			Debug.Log ("Remote Disconnected.");
-			_tcpClient.Close ();
+			Debug.Log ("TcpServerThreadHandler() - Remote Disconnected.");
+			if(_tcpClient!=null)
+				_tcpClient.Close ();
 			_currentClient.Close ();
 			_currentClient = null;
 		}
@@ -335,7 +350,14 @@ public class ServiceManager : MonoBehaviour {
 				_tcpClient.GetStream ().Write (_ReliableDataMem.GetBuffer (), 0, (int) _ReliableDataMem.Length);
 			if (_UnReliableDataDirty && _udpSender.Client.Connected)
 				_udpSender.Send (_UnReliableDataMem.GetBuffer (), (int)_UnReliableDataMem.Length);
-		}catch(Exception e) {
+		}
+		catch(SocketException e)
+		{
+			Debug.LogError ("_ProcessSendData() - Socket Error: "+e.Message);
+			_CloseConnection ();
+			
+		}
+		catch(Exception e) {
 			Debug.LogError ("_ProcessSendData() - "+e.Message);
 		}
 	}
@@ -352,6 +374,8 @@ public class ServiceManager : MonoBehaviour {
 
 	void OnGUI()
 	{
+		if (!DebugPrint)
+			return;
 		_style.fontSize = 24;
 		_style.normal.textColor=Color.white;
 //		_style.font.material.color = Color.white;
@@ -376,5 +400,17 @@ public class ServiceManager : MonoBehaviour {
 	{
 		var s=GetService(GyroServiceProvider.ServiceName) as GyroServiceProvider;
 		s.Calibrate ();
+	}
+
+	public void ConnectTo(string OtherEnd)
+	{
+		//if (!IsReceiver) 
+		{
+			_CloseConnection ();
+			if (_tcpClient == null)
+				_tcpClient = new TcpClient ();
+			IPAddress addr = IPAddress.Parse (OtherEnd);
+			_tcpClient.BeginConnect (addr, TCPPort, null, false);
+		}
 	}
 }
